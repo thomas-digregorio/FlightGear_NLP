@@ -5,9 +5,10 @@ A Python-based system that uses a lightweight local LLM to interpret natural lan
 ## Features
 
 - Natural language control of FlightGear aircraft via chat interface
-- Small local LLM (TinyLlama or Phi-2) for command parsing
-- Real-time visualization of aircraft state and flight path
-- Support for basic commands: speed control, direction changes, landing, status queries
+- Small local LLM (TinyLlama 1.1B Chat) for command parsing
+- HTTP-based communication with FlightGear (no telnet required)
+- Support for commands: speed control, altitude control, direction changes, landing, status queries
+- Aircraft starts in the air at 5000 feet (configurable)
 
 ## Prerequisites
 
@@ -27,7 +28,7 @@ A Python-based system that uses a lightweight local LLM to interpret natural lan
 **Alternative (if not in PATH):**
 Instead of `fgfs`, use the full path:
 ```bash
-"C:\Program Files\FlightGear\bin\fgfs.exe" --telnet=5500 --httpd=8080
+"C:\Program Files\FlightGear\bin\fgfs.exe" --httpd=8080 --altitude=5000 --heading=090 --speed=150
 ```
 
 **Linux/Mac:**
@@ -119,7 +120,7 @@ Get-ChildItem -Path "C:\Program Files" -Recurse -Filter "fgfs.exe" -ErrorAction 
 Get-ChildItem -Path "C:\Program Files (x86)" -Recurse -Filter "fgfs.exe" -ErrorAction SilentlyContinue
 ```
 
-The default telnet port is 5500, which the application will use to communicate with FlightGear.
+The application uses HTTP port 8080 to communicate with FlightGear.
 
 ## Usage
 
@@ -132,6 +133,7 @@ The default telnet port is 5500, which the application will use to communicate w
 
 3. Type natural language commands in the chat interface:
    - "increase speed to 250 knots"
+   - "increase altitude to 10000 feet"
    - "turn left 30 degrees"
    - "land the plane"
    - "what's my current speed?"
@@ -141,56 +143,70 @@ The default telnet port is 5500, which the application will use to communicate w
 ## Example Commands
 
 - **Speed control**: "increase speed to 250 knots", "slow down", "set speed to 200"
+- **Altitude control**: "increase altitude to 10000 feet", "climb to 15000", "descend to 5000", "increase altitude by 2000"
 - **Direction control**: "turn left 30 degrees", "head north", "change heading to 090"
+- **Takeoff**: "take off", "takeoff", "launch"
 - **Landing**: "land the plane", "initiate landing sequence"
 - **Status**: "what's my speed?", "show status", "where am I?"
+- **System**: "help" - Show all commands, "watch" - Real-time status monitor
 
 ## Project Structure
 
 ```
 NLP_Scratch/
 ├── requirements.txt
-├── environment.yml         # Conda environment file
+├── environment.yml              # Conda environment file
 ├── README.md
-├── start_flightgear.bat    # Windows helper script to start FlightGear
-├── main.py                 # Entry point, chat interface
-├── flightgear_controller.py # FlightGear communication
-├── nlp_parser.py           # LLM command parsing
-├── command_executor.py     # Command execution logic
-├── visualizer.py           # Visualization utilities
+├── start_flightgear.bat         # Windows helper script to start FlightGear
+├── main.py                       # Entry point, chat interface
+├── flightgear_controller_simple.py # FlightGear HTTP communication (using flightgear-python)
+├── nlp_parser.py                 # LLM command parsing (TinyLlama 1.1B Chat)
+├── command_executor.py           # Command execution logic
 └── .gitignore
 ```
 
 ## Notes
 
-- The first run will download the LLM model (TinyLlama), which may take a few minutes (~2GB download)
+- **Model**: Uses TinyLlama 1.1B Chat (TinyLlama/TinyLlama-1.1B-Chat-v1.0) from HuggingFace
+- The first run will download the LLM model, which may take a few minutes (~2GB download)
 - Model inference runs locally - no internet required after initial download
 - FlightGear must be running before starting the Python application
-- The application will attempt to connect to FlightGear on localhost:5500
+- The application connects to FlightGear via HTTP on localhost:8080
 - If LLM fails to load, the system will automatically fall back to rule-based parsing
+- Aircraft starts in the air at 5000 feet by default (configurable in start_flightgear.bat)
 
 ## Troubleshooting
 
-- **Connection refused**: 
-  - Make sure FlightGear is running with `--telnet=5500`
-  - Check that port 5500 is not blocked by firewall
-  - Try: `netstat -an | findstr 5500` (Windows) or `netstat -an | grep 5500` (Linux/Mac) to verify FlightGear is listening
+- **Connection refused / Cannot connect to FlightGear**: 
+  - Make sure FlightGear is running with `--httpd=8080`
+  - Check that port 8080 is not blocked by firewall
+  - Verify FlightGear is listening: `netstat -an | findstr 8080` (Windows) or `netstat -an | grep 8080` (Linux/Mac)
+  - Make sure you're using the `start_flightgear.bat` script or manually start with `fgfs --httpd=8080`
 
 - **Model download issues**: 
   - Check internet connection for initial model download
-  - Model will be cached in `~/.cache/huggingface/` after first download
+  - Model (TinyLlama 1.1B Chat) will be cached in `~/.cache/huggingface/` after first download
   - If download fails, the system will use rule-based parsing as fallback
+  - Model size: ~2GB
 
 - **Slow response**: 
   - LLM inference may take 2-5 seconds depending on your hardware
   - CPU inference is slower than GPU - consider using CUDA if available
   - Rule-based parsing (fallback) is much faster but less flexible
+  - TinyLlama is optimized for speed but may be slower on older CPUs
 
 - **Import errors**: 
   - Make sure all dependencies are installed: `pip install -r requirements.txt`
   - Use Python 3.8 or higher
+  - If `flightgear-python` fails to install, try: `pip install --upgrade flightgear-python`
 
-- **Visualization not showing**: 
-  - Make sure matplotlib backend is properly configured
-  - On some systems, you may need: `export MPLBACKEND=TkAgg` (Linux/Mac)
+- **Position/Altitude showing as 0**: 
+  - This may indicate FlightGear property paths need adjustment
+  - The system tries multiple property paths automatically
+  - Check FlightGear is fully loaded before running the Python application
+
+- **Commands not recognized**: 
+  - The system uses TinyLlama 1.1B Chat for parsing - try rephrasing your command
+  - Use the `help` command to see available command formats
+  - Rule-based fallback handles common commands if LLM fails
 
