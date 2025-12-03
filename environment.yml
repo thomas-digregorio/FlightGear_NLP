@@ -1,0 +1,14 @@
+name: flightgear-nlp
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pytorch
+  - numpy
+  - pip
+  - pip:
+    - transformers>=4.35.0
+    - matplotlib>=3.7.0
+
