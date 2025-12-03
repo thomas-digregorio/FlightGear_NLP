@@ -15,27 +15,27 @@ set FOUND=0
 REM Check each path
 if exist "C:\Program Files\FlightGear\bin\fgfs.exe" (
     echo Found FlightGear at: C:\Program Files\FlightGear\bin\fgfs.exe
-    echo Starting FlightGear with HTTP interface and autostart...
+    echo Starting FlightGear with HTTP interface and starting in the air...
     cd /d "C:\Program Files\FlightGear\bin"
-    start "" fgfs.exe --httpd=8080 --aircraft=c172p --autostart
+    start "" fgfs.exe --httpd=8080 --aircraft=c172p --altitude=5000 --heading=090 --speed=150
     set FOUND=1
     goto :found
 )
 
 if exist "C:\Program Files (x86)\FlightGear\bin\fgfs.exe" (
     echo Found FlightGear at: C:\Program Files (x86)\FlightGear\bin\fgfs.exe
-    echo Starting FlightGear with HTTP interface and autostart...
+    echo Starting FlightGear with HTTP interface and starting in the air...
     cd /d "C:\Program Files (x86)\FlightGear\bin"
-    start "" fgfs.exe --httpd=8080 --aircraft=c172p --autostart
+    start "" fgfs.exe --httpd=8080 --aircraft=c172p --altitude=5000 --heading=090 --speed=150
     set FOUND=1
     goto :found
 )
 
 if exist "C:\FlightGear\bin\fgfs.exe" (
     echo Found FlightGear at: C:\FlightGear\bin\fgfs.exe
-    echo Starting FlightGear with HTTP interface and autostart...
+    echo Starting FlightGear with HTTP interface and starting in the air...
     cd /d "C:\FlightGear\bin"
-    start "" fgfs.exe --httpd=8080 --aircraft=c172p --autostart
+    start "" fgfs.exe --httpd=8080 --aircraft=c172p --altitude=5000 --heading=090 --speed=150
     set FOUND=1
     goto :found
 )
@@ -49,7 +49,7 @@ if %FOUND%==0 (
     echo 2. Or edit this script and add the path to your FlightGear installation
     echo.
     echo You can also start FlightGear manually with:
-    echo "C:\Path\To\FlightGear\bin\fgfs.exe" --telnet=5500 --httpd=8080
+    echo "C:\Path\To\FlightGear\bin\fgfs.exe" --httpd=8080 --altitude=5000 --heading=090 --speed=150
     pause
     exit /b 1
 )

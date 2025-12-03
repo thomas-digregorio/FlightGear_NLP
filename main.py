@@ -6,23 +6,9 @@ Chat interface for controlling FlightGear aircraft via natural language.
 
 import sys
 import time
-# Use flightgear-python library (easiest and most reliable)
-try:
-    from flightgear_controller_simple import FlightGearController
-    USE_HTTP = True
-except ImportError:
-    # Fallback to HTTP controller
-    try:
-        from flightgear_controller_http import FlightGearController
-        USE_HTTP = True
-    except ImportError:
-        # Fallback to telnet
-        from flightgear_controller import FlightGearController
-        USE_HTTP = False
+from flightgear_controller_simple import FlightGearController
 from nlp_parser import NLParser
 from command_executor import CommandExecutor
-from visualizer import FlightVisualizer
-import threading
 
 
 def print_welcome():
@@ -51,6 +37,11 @@ def print_help():
     print("    - 'increase speed to 250 knots'")
     print("    - 'slow down'")
     print("    - 'set speed to 200'")
+    print("  Altitude Control:")
+    print("    - 'increase altitude to 10000 feet'")
+    print("    - 'climb to 15000'")
+    print("    - 'descend to 5000'")
+    print("    - 'increase altitude by 2000'")
     print("  Direction Control:")
     print("    - 'turn left 30 degrees'")
     print("    - 'turn right'")
@@ -72,7 +63,6 @@ def print_help():
     print("    - 'where am I?'")
     print("  System:")
     print("    - 'help' - Show this help message")
-    print("    - 'visualize' - Start real-time visualization (graphical)")
     print("    - 'watch' or 'monitor' - Show real-time status in terminal")
     print("    - 'quit' or 'exit' - Exit the program")
     print()
@@ -86,38 +76,26 @@ def main():
     print("Initializing components...")
     
     # FlightGear controller
-    if USE_HTTP:
-        print("Using flightgear-python library (HTTP interface)")
-        fg_controller = FlightGearController(http_port=8080)
-        required_flag = "--httpd=8080"
-    else:
-        print("Using Telnet interface")
-        fg_controller = FlightGearController(port=5500)
-        required_flag = "--telnet=5500"
+    print("Using flightgear-python library (HTTP interface)")
+    fg_controller = FlightGearController(http_port=8080)
     
     # Connect to FlightGear
     print("\nConnecting to FlightGear...")
     if not fg_controller.connect():
         print("\nERROR: Could not connect to FlightGear.")
         print("Please make sure FlightGear is running with:")
-        if USE_HTTP:
-            print("  fgfs --httpd=8080")
-        else:
-            print("  fgfs --telnet=5500 --httpd=8080")
+        print("  fgfs --httpd=8080")
         print("\nOr use: start_flightgear.bat")
         sys.exit(1)
     
     # Test connection by trying to read a property
     print("Testing connection...")
-    print("⚠ IMPORTANT: Make sure FlightGear was started with --telnet=5500")
-    print("If you see empty responses, FlightGear telnet server may not be enabled.")
     if not fg_controller.test_connection():
         print("\n⚠ WARNING: Connected but cannot read properties.")
         print("This usually means:")
-        print("  1. FlightGear was NOT started with --telnet=5500")
-        print("  2. FlightGear telnet server is not enabled")
-        print("  3. Port 5500 is blocked by firewall")
-        print("\nSOLUTION: Restart FlightGear with: fgfs --telnet=5500 --httpd=8080")
+        print("  1. FlightGear was NOT started with --httpd=8080")
+        print("  2. Port 8080 is blocked by firewall")
+        print("\nSOLUTION: Restart FlightGear with: fgfs --httpd=8080")
         print("Or use: start_flightgear.bat")
         print("\nYou can still try commands, but they may not work.")
     
@@ -128,27 +106,8 @@ def main():
     # Command executor
     executor = CommandExecutor(fg_controller)
     
-    # Visualizer
-    visualizer = FlightVisualizer()
-    visualization_running = False
-    
-    # Ask user if they want to start data visualization (optional - FlightGear shows the plane)
     print("\nSystem ready!")
     print("Note: You'll see the plane react in real-time in the FlightGear window!")
-    auto_vis = input("Also start data graphs/charts? (y/n, default=n): ").strip().lower()
-    if auto_vis in ['y', 'yes']:
-        print("Starting data visualization...")
-        # Start visualization on main thread using a timer-based approach
-        # This avoids threading issues with matplotlib
-        try:
-            visualizer.start_live_plot(fg_controller)
-            visualization_running = True
-            print("✓ Data graphs started! (Optional - FlightGear shows the actual plane)")
-            time.sleep(1)  # Give visualization time to initialize
-        except Exception as e:
-            print(f"⚠ Warning: Could not start data graphs: {e}")
-            print("No problem - you can still control the plane and see it in FlightGear!")
-    
     print("\nYou can now give commands.\n")
     
     # Main command loop
@@ -180,21 +139,6 @@ def main():
                     print(f"Current throttle: {throttle}")
                     print("Check the FlightGear window - the throttle should be at 80%")
                     print("If you see the throttle move, the connection is working!\n")
-                    continue
-                
-                if user_input.lower() == 'visualize':
-                    if not visualization_running:
-                        print("Starting visualization...")
-                        try:
-                            visualizer.start_live_plot(fg_controller)
-                            visualization_running = True
-                            print("✓ Visualization started! A window should open showing flight data.")
-                            time.sleep(1)  # Give visualization time to initialize
-                        except Exception as e:
-                            print(f"⚠ Error starting visualization: {e}")
-                            print("Try the 'watch' command for terminal-based real-time updates.")
-                    else:
-                        print("Visualization is already running.")
                     continue
                 
                 if user_input.lower() in ['watch', 'monitor', 'live']:
@@ -242,13 +186,8 @@ def main():
                     print("FlightGear connection lost. Please restart FlightGear and reconnect.")
                     break
                 
-                # Add data point to visualizer if running
-                if visualization_running:
-                    state = fg_controller.get_aircraft_state()
-                    visualizer.add_data_point(state)
-                
                 # Show quick status after command
-                if result.get("success") and visualization_running:
+                if result.get("success"):
                     state = fg_controller.get_aircraft_state()
                     print(f"   [Alt: {state.get('altitude_ft', 0):.0f}ft | Speed: {state.get('speed_kts', 0):.0f}kts | Heading: {state.get('heading_deg', 0):.0f}°]")
                 
@@ -264,8 +203,6 @@ def main():
     finally:
         # Cleanup
         print("Cleaning up...")
-        if visualization_running:
-            visualizer.stop()
         fg_controller.disconnect()
         print("Goodbye!")
 

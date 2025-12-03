@@ -66,6 +66,7 @@ class NLParser:
 Available commands:
 - change_speed: Change aircraft speed (requires speed_value in knots)
 - change_direction: Change heading/direction (requires heading_deg in degrees 0-360, or direction like "left", "right", "north", etc.)
+- change_altitude: Change altitude (requires altitude_ft in feet)
 - takeoff: Initiate takeoff sequence
 - land: Initiate landing sequence
 - status: Get current aircraft status
@@ -78,7 +79,8 @@ Respond ONLY with a JSON object in this exact format:
     "parameters": {{
         "speed_value": number or null,
         "heading_deg": number or null,
-        "direction": "string or null"
+        "direction": "string or null",
+        "altitude_ft": number or null
     }}
 }}
 
@@ -151,6 +153,32 @@ JSON:"""
                 return {
                     "intent": "status",
                     "parameters": {}
+                }
+        
+        # Check for altitude change
+        altitude_keywords = ['altitude', 'height', 'feet', 'ft', 'climb', 'descend', 'ascend']
+        if any(keyword in user_input_lower for keyword in altitude_keywords):
+            # Extract number
+            numbers = re.findall(r'\d+', user_input)
+            altitude_value = int(numbers[0]) if numbers else None
+            
+            if 'increase' in user_input_lower or 'climb' in user_input_lower or 'ascend' in user_input_lower or 'up' in user_input_lower:
+                # Get current altitude and add to it
+                return {
+                    "intent": "change_altitude",
+                    "parameters": {"altitude_ft": altitude_value, "relative": "increase"}
+                }
+            elif 'decrease' in user_input_lower or 'descend' in user_input_lower or 'down' in user_input_lower:
+                # Get current altitude and subtract from it
+                return {
+                    "intent": "change_altitude",
+                    "parameters": {"altitude_ft": altitude_value, "relative": "decrease"}
+                }
+            elif altitude_value:
+                # Absolute altitude
+                return {
+                    "intent": "change_altitude",
+                    "parameters": {"altitude_ft": altitude_value}
                 }
         
         # Check for speed change

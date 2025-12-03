@@ -78,21 +78,39 @@ Before running the Python application, start FlightGear with network interface e
 ```bash
 start_flightgear.bat
 ```
+This script starts FlightGear with the plane already flying in the air at 5000 feet, heading 090, and speed 150 knots.
 
 **Windows (Manual - if FlightGear is in your PATH):**
 ```bash
-fgfs --telnet=5500 --httpd=8080
+# Start in the air (recommended)
+fgfs --httpd=8080 --altitude=5000 --heading=090 --speed=150
+
+# Or start on the ground
+fgfs --httpd=8080 --autostart
 ```
 
 **Windows (Manual - if not in PATH):**
 ```bash
-"C:\Program Files\FlightGear\bin\fgfs.exe" --telnet=5500 --httpd=8080
+# Start in the air (recommended)
+"C:\Program Files\FlightGear\bin\fgfs.exe" --httpd=8080 --altitude=5000 --heading=090 --speed=150
+
+# Or start on the ground
+"C:\Program Files\FlightGear\bin\fgfs.exe" --httpd=8080 --autostart
 ```
 
 **Linux/Mac (if not in PATH):**
 ```bash
-/path/to/fgfs --telnet=5500 --httpd=8080
+# Start in the air (recommended)
+/path/to/fgfs --httpd=8080 --altitude=5000 --heading=090 --speed=150
+
+# Or start on the ground
+/path/to/fgfs --httpd=8080 --autostart
 ```
+
+**Note:** You can customize the starting altitude, heading, and speed by changing the values:
+- `--altitude=5000` - Starting altitude in feet (e.g., 10000 for 10,000 feet)
+- `--heading=090` - Starting heading in degrees (000-360)
+- `--speed=150` - Starting speed in knots
 
 **Finding FlightGear on Windows:**
 If you're not sure where FlightGear is installed, try:

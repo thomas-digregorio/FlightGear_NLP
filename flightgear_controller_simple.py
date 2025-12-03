@@ -93,23 +93,60 @@ class FlightGearController:
         except Exception as e:
             return False
     
+    def _get_property_with_fallback(self, property_paths):
+        """Try multiple property paths and return the first valid value."""
+        for path in property_paths:
+            value = self.get_property(path)
+            if value is not None:
+                return value
+        return None
+    
     def get_aircraft_state(self):
         """Get current aircraft state."""
         state = {}
         
-        # Position
-        state['latitude'] = self.get_property('/sim/position/latitude-deg')
-        state['longitude'] = self.get_property('/sim/position/longitude-deg')
-        state['altitude_ft'] = self.get_property('/sim/position/altitude-ft')
+        # Position - try multiple property paths
+        state['latitude'] = self._get_property_with_fallback([
+            '/position/latitude-deg',
+            '/sim/position/latitude-deg',
+            '/position/latitude',
+        ])
+        state['longitude'] = self._get_property_with_fallback([
+            '/position/longitude-deg',
+            '/sim/position/longitude-deg',
+            '/position/longitude',
+        ])
+        state['altitude_ft'] = self._get_property_with_fallback([
+            '/position/altitude-ft',
+            '/sim/position/altitude-ft',
+            '/position/altitude',
+            '/position/altitude-agl-ft',
+        ])
         
         # Speed
-        state['speed_kts'] = self.get_property('/velocities/airspeed-kt')
-        state['ground_speed_kts'] = self.get_property('/velocities/groundspeed-kt')
+        state['speed_kts'] = self._get_property_with_fallback([
+            '/velocities/airspeed-kt',
+            '/velocities/airspeed-kts',
+            '/velocities/uBody-fps',  # Body velocity, may need conversion
+        ])
+        state['ground_speed_kts'] = self._get_property_with_fallback([
+            '/velocities/groundspeed-kt',
+            '/velocities/groundspeed-kts',
+        ])
         
         # Orientation
-        state['heading_deg'] = self.get_property('/orientation/heading-deg')
-        state['pitch_deg'] = self.get_property('/orientation/pitch-deg')
-        state['roll_deg'] = self.get_property('/orientation/roll-deg')
+        state['heading_deg'] = self._get_property_with_fallback([
+            '/orientation/heading-deg',
+            '/orientation/heading',
+        ])
+        state['pitch_deg'] = self._get_property_with_fallback([
+            '/orientation/pitch-deg',
+            '/orientation/pitch',
+        ])
+        state['roll_deg'] = self._get_property_with_fallback([
+            '/orientation/roll-deg',
+            '/orientation/roll',
+        ])
         
         # Controls
         state['throttle'] = self.get_property('/controls/engines/engine/throttle')
@@ -165,6 +202,61 @@ class FlightGearController:
         new_throttle = max(0.0, min(1.0, current_throttle + throttle_adjustment))
         
         return self.set_throttle(new_throttle)
+    
+    def set_altitude(self, target_altitude_ft):
+        """
+        Set target altitude by adjusting elevator and throttle.
+        
+        Args:
+            target_altitude_ft: Target altitude in feet
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        current_state = self.get_aircraft_state()
+        current_altitude = current_state.get('altitude_ft', 0)
+        
+        if current_altitude is None:
+            # If we can't read current altitude, use a simple climb/descend approach
+            # Assume we want to climb if target is high
+            if target_altitude_ft > 10000:
+                # Climb: nose up and increase throttle
+                self.set_elevator(0.3)
+                self.set_throttle(0.8)
+            else:
+                # Descend: nose down and reduce throttle
+                self.set_elevator(-0.2)
+                self.set_throttle(0.4)
+            return True
+        
+        altitude_diff = target_altitude_ft - current_altitude
+        
+        # Adjust elevator based on altitude difference
+        if altitude_diff > 500:
+            # Need to climb significantly
+            elevator_value = 0.3  # Nose up
+            throttle_value = 0.8  # Increase power
+        elif altitude_diff > 100:
+            # Small climb
+            elevator_value = 0.15
+            throttle_value = 0.7
+        elif altitude_diff < -500:
+            # Need to descend significantly
+            elevator_value = -0.3  # Nose down
+            throttle_value = 0.3  # Reduce power
+        elif altitude_diff < -100:
+            # Small descent
+            elevator_value = -0.15
+            throttle_value = 0.5
+        else:
+            # Close to target, level off
+            elevator_value = 0.0
+            throttle_value = 0.6
+        
+        self.set_elevator(elevator_value)
+        self.set_throttle(throttle_value)
+        
+        return True
     
     def start_engine(self):
         """Start the aircraft engine using FlightGear's autostart function."""

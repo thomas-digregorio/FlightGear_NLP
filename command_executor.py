@@ -4,7 +4,7 @@ Command Executor Module
 Maps LLM intents to FlightGear control commands and executes them.
 """
 
-from flightgear_controller import FlightGearController
+from flightgear_controller_simple import FlightGearController
 
 
 class CommandExecutor:
@@ -43,6 +43,8 @@ class CommandExecutor:
                 return self._execute_change_speed(parameters)
             elif intent == "change_direction":
                 return self._execute_change_direction(parameters)
+            elif intent == "change_altitude":
+                return self._execute_change_altitude(parameters)
             elif intent == "takeoff" or intent == "take_off":
                 return self._execute_takeoff()
             elif intent == "release_brakes":
@@ -147,6 +149,64 @@ class CommandExecutor:
             return {
                 "success": False,
                 "message": "Failed to change heading"
+            }
+    
+    def _execute_change_altitude(self, parameters):
+        """
+        Execute altitude change command.
+        
+        Args:
+            parameters: Dictionary with 'altitude_ft' key, optionally 'relative' key
+            
+        Returns:
+            Execution result dictionary
+        """
+        altitude_ft = parameters.get("altitude_ft")
+        relative = parameters.get("relative", "").lower()
+        
+        # Get current altitude
+        state = self.fg.get_aircraft_state()
+        current_altitude = state.get('altitude_ft', 0)
+        
+        # Calculate target altitude
+        if altitude_ft is None:
+            # No specific altitude given, use relative change
+            if relative == "increase" or relative == "climb":
+                # Increase by default 1000 feet
+                target_altitude = (current_altitude or 5000) + 1000
+            elif relative == "decrease" or relative == "descend":
+                # Decrease by default 1000 feet
+                target_altitude = max(1000, (current_altitude or 5000) - 1000)
+            else:
+                # Default: increase by 1000 feet
+                target_altitude = (current_altitude or 5000) + 1000
+        else:
+            # Specific altitude given
+            if relative == "increase" or relative == "climb":
+                # Add to current altitude
+                target_altitude = (current_altitude or 0) + float(altitude_ft)
+            elif relative == "decrease" or relative == "descend":
+                # Subtract from current altitude
+                target_altitude = max(1000, (current_altitude or 0) - float(altitude_ft))
+            else:
+                # Absolute altitude
+                target_altitude = float(altitude_ft)
+        
+        # Validate altitude (reasonable range: 1000-50000 feet)
+        target_altitude = max(1000, min(50000, target_altitude))
+        
+        success = self.fg.set_altitude(target_altitude)
+        
+        if success:
+            return {
+                "success": True,
+                "message": f"Changing altitude to {target_altitude:.0f} feet",
+                "data": {"target_altitude_ft": target_altitude}
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Failed to change altitude"
             }
     
     def _execute_takeoff(self):
