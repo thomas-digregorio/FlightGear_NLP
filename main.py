@@ -9,6 +9,8 @@ import time
 from flightgear_controller_simple import FlightGearController
 from nlp_parser import NLParser
 from command_executor import CommandExecutor
+from dialogue_state_tracker import DialogueStateTracker
+from voice_input import VoiceInputHandler
 
 
 def print_welcome():
@@ -16,16 +18,17 @@ def print_welcome():
     print("=" * 60)
     print("FlightGear NLP Control System")
     print("=" * 60)
-    print("\nWelcome! You can control the aircraft using natural language.")
+    print("\nWelcome! You can control the aircraft using voice commands.")
     print("Watch the FlightGear window to see your plane react in real-time!")
-    print("\nExample commands:")
+    print("\nVOICE MODE: Hold SPACEBAR to speak your command.")
+    print("\nExample voice commands:")
     print("  - 'take off'")
     print("  - 'increase speed to 250 knots'")
     print("  - 'turn left 30 degrees'")
     print("  - 'head north'")
     print("  - 'land the plane'")
     print("  - 'what's my current speed?'")
-    print("\nType 'help' for more commands, 'quit' or 'exit' to stop.")
+    print("\nSay 'help' for more commands, 'quit' or 'exit' to stop.")
     print("=" * 60)
     print()
 
@@ -106,16 +109,34 @@ def main():
     # Command executor
     executor = CommandExecutor(fg_controller)
     
+    # Dialogue state tracker
+    print("Initializing dialogue state tracker...")
+    state_tracker = DialogueStateTracker()
+    
+    # Voice input handler
+    print("Initializing voice input...")
+    try:
+        voice_handler = VoiceInputHandler(model_size="tiny")
+        print("Voice input ready!")
+    except Exception as e:
+        print(f"\nERROR: Failed to initialize voice input: {e}")
+        print("Please ensure:")
+        print("  1. A microphone is connected and working")
+        print("  2. Whisper dependencies are installed: pip install openai-whisper sounddevice keyboard")
+        print("  3. You have microphone permissions")
+        sys.exit(1)
+    
     print("\nSystem ready!")
     print("Note: You'll see the plane react in real-time in the FlightGear window!")
-    print("\nYou can now give commands.\n")
+    print("The system now remembers conversation context across multiple turns.")
+    print("\nHold SPACEBAR to speak your command.\n")
     
     # Main command loop
     try:
         while True:
             try:
-                # Get user input
-                user_input = input("You: ").strip()
+                # Get user input via voice
+                user_input = voice_handler.get_voice_command()
                 
                 if not user_input:
                     continue
@@ -127,6 +148,11 @@ def main():
                 
                 if user_input.lower() == 'help':
                     print_help()
+                    continue
+                
+                if user_input.lower() in ['reset', 'clear', 'new conversation']:
+                    state_tracker.reset_state()
+                    print("\n✓ Dialogue state reset. Starting fresh conversation.\n")
                     continue
                 
                 if user_input.lower() == 'test':
@@ -164,17 +190,54 @@ def main():
                         print("\n\nReturning to command mode...\n")
                     continue
                 
-                # Parse command using NLP
-                print("Processing command...")
-                parsed_command = nlp_parser.parse_command(user_input)
+                # Get dialogue context for parser
+                dialogue_context = state_tracker.get_context_for_parser()
                 
-                # Debug: show parsed command
+                # Parse command using NLP (with context)
+                print("Processing command...")
+                parsed_command = nlp_parser.parse_command(user_input, dialogue_context)
+                
+                # Store original input for correction detection
+                parsed_command['_original_input'] = user_input
+                
+                # Check if this is a correction - if so, fix intent before merging
+                if state_tracker.is_correction(user_input):
+                    # If parser got wrong intent, use previous intent from state
+                    if not parsed_command.get('intent') or parsed_command.get('intent', '').lower() == 'status':
+                        if state_tracker.current_intent:
+                            parsed_command['intent'] = state_tracker.current_intent
+                
+                # Merge parsed command with dialogue state
+                merged_command = state_tracker.merge_parsed_with_state(parsed_command)
+                
+                # Update dialogue state (this will handle corrections and extract parameters)
+                state_tracker.update_state(merged_command, user_input)
+                
+                # After state update, get the final corrected command for execution
+                # This ensures corrections are properly reflected
+                final_command = {
+                    'intent': state_tracker.current_intent or merged_command.get('intent'),
+                    'parameters': state_tracker.slots.copy()
+                }
+                # Override with any new parameters from the parsed command
+                for key, value in merged_command.get('parameters', {}).items():
+                    if value is not None:
+                        final_command['parameters'][key] = value
+                
+                # Debug: show parsed command and state
                 if '--debug' in sys.argv:
                     print(f"DEBUG - Parsed command: {parsed_command}")
+                    print(f"DEBUG - Merged with state: {merged_command}")
+                    print(f"DEBUG - Final command: {final_command}")
+                    print(f"DEBUG - Dialogue state: {state_tracker.get_state()}")
                 
-                # Execute command
+                # Execute command (use final_command which has corrections applied)
                 try:
-                    result = executor.execute(parsed_command)
+                    result = executor.execute(final_command)
+                    
+                    # Record action in state tracker
+                    if result.get("success"):
+                        state_tracker.set_last_action(final_command.get("intent", "unknown"))
                     
                     # Display result
                     if result.get("success"):

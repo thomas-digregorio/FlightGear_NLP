@@ -6,6 +6,7 @@ Uses a small local LLM to parse natural language commands into structured intent
 
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
+import torch.quantization
 import json
 import re
 
@@ -44,6 +45,20 @@ class NLParser:
             if self.device == "cpu":
                 self.model = self.model.to(self.device)
             self.model.eval()
+            
+            # Apply INT8 dynamic quantization for faster inference and reduced memory
+            # This quantizes linear layers to INT8 while keeping activations in FP32
+            if self.device == "cpu":
+                print("Applying INT8 dynamic quantization for CPU optimization...")
+                self.model = torch.quantization.quantize_dynamic(
+                    self.model,
+                    {torch.nn.Linear},  # Quantize linear layers
+                    dtype=torch.qint8
+                )
+                print("✓ Model quantized to INT8 (4× memory reduction, 2-3× speedup expected)")
+            else:
+                print("Note: Quantization skipped on CUDA (FP16 already optimized)")
+            
             print("Model loaded successfully!")
         except Exception as e:
             print(f"Error loading model: {e}")
@@ -51,17 +66,30 @@ class NLParser:
             self.model = None
             self.tokenizer = None
     
-    def _create_prompt(self, user_input):
+    def _create_prompt(self, user_input, dialogue_context=None):
         """
         Create a prompt for the LLM to extract command intent.
         
         Args:
             user_input: Natural language command from user
+            dialogue_context: Optional context string from dialogue state tracker
             
         Returns:
             Formatted prompt string
         """
-        prompt = f"""You are a flight control assistant. Extract the command intent from the user's natural language input.
+        context_section = ""
+        if dialogue_context:
+            context_section = f"""
+Previous conversation context:
+{dialogue_context}
+
+Use this context to:
+- Resolve pronouns and references (e.g., "it", "there", "that")
+- Fill in missing parameters from previous turns
+- Understand corrections (e.g., "actually, make it 60m" refers to previous command)
+"""
+        
+        prompt = f"""You are a flight control assistant. Extract the command intent from the user's natural language input.{context_section}
 
 Available commands:
 - change_speed: Change aircraft speed (requires speed_value in knots)
@@ -109,17 +137,42 @@ JSON:"""
         
         return None
     
-    def _rule_based_parse(self, user_input):
+    def _rule_based_parse(self, user_input, dialogue_context=None):
         """
         Fallback rule-based parser if LLM is not available.
         
         Args:
             user_input: Natural language command
+            dialogue_context: Optional context string from dialogue state tracker
             
         Returns:
             Dictionary with intent and parameters
         """
         user_input_lower = user_input.lower()
+        
+        # Check if this is a correction/update with just a number
+        # If dialogue context exists and contains previous intent, try to infer
+        correction_keywords = ['actually', 'correction', 'make it', 'change it', 'update', 'instead']
+        is_correction = any(keyword in user_input_lower for keyword in correction_keywords)
+        numbers = re.findall(r'\d+', user_input)
+        
+        if is_correction and numbers and dialogue_context:
+            # Try to infer intent from context
+            if 'change_altitude' in dialogue_context or 'altitude' in dialogue_context.lower():
+                return {
+                    "intent": "change_altitude",
+                    "parameters": {"altitude_ft": int(numbers[0])}
+                }
+            elif 'change_speed' in dialogue_context or 'speed' in dialogue_context.lower():
+                return {
+                    "intent": "change_speed",
+                    "parameters": {"speed_value": int(numbers[0])}
+                }
+            elif 'change_direction' in dialogue_context or 'heading' in dialogue_context.lower() or 'direction' in dialogue_context.lower():
+                return {
+                    "intent": "change_direction",
+                    "parameters": {"heading_deg": int(numbers[0])}
+                }
         
         # Check for brake commands
         if any(word in user_input_lower for word in ['release brake', 'brakes off', 'unbrake']):
@@ -255,12 +308,13 @@ JSON:"""
             "parameters": {}
         }
     
-    def parse_command(self, user_input):
+    def parse_command(self, user_input, dialogue_context=None):
         """
         Parse natural language command into structured intent.
         
         Args:
             user_input: Natural language command string
+            dialogue_context: Optional context string from dialogue state tracker
             
         Returns:
             Dictionary with 'intent' and 'parameters' keys
@@ -274,24 +328,24 @@ JSON:"""
         # Use LLM if available
         if self.model and self.tokenizer:
             try:
-                prompt = self._create_prompt(user_input)
+                prompt = self._create_prompt(user_input, dialogue_context)
                 
                 # Tokenize with attention mask
                 inputs = self.tokenizer(
                     prompt, 
                     return_tensors="pt",
                     padding=True,
-                    truncation=True
+                    truncation=True,
+                    max_length=1024  # Increased to accommodate context
                 ).to(self.device)
                 
-                # Generate
+                # Generate with optimized settings for faster inference
                 with torch.no_grad():
                     outputs = self.model.generate(
                         inputs.input_ids,
                         attention_mask=inputs.attention_mask,
-                        max_new_tokens=150,
-                        temperature=0.3,
-                        do_sample=True,
+                        max_new_tokens=75,  # Reduced from 150 for faster inference
+                        do_sample=False,  # Greedy decoding (faster than sampling)
                         pad_token_id=self.tokenizer.eos_token_id
                     )
                 
@@ -311,5 +365,5 @@ JSON:"""
                 print(f"LLM parsing error: {e}, falling back to rule-based parser")
         
         # Fallback to rule-based parsing
-        return self._rule_based_parse(user_input)
+        return self._rule_based_parse(user_input, dialogue_context)
 
