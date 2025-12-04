@@ -2,6 +2,12 @@
 
 A Python-based system that uses voice commands and AI models to control FlightGear aircraft simulation in real-time. Features natural language understanding with dialogue state tracking and optimized inference for edge devices.
 
+## Demo
+
+Watch the system in action:
+
+[📹 Demo Video](FlightGear_NLP_Demo.mp4)
+
 ## Features
 
 - **Voice-Controlled Interface**: Speak commands using OpenAI Whisper (tiny model) with push-to-talk (hold SPACEBAR)
